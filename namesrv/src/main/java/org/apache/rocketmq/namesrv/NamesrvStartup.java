@@ -71,6 +71,7 @@ public class NamesrvStartup {
     }
 
     public static NamesrvController createNamesrvController(String[] args) throws IOException, JoranException {
+        // 1. 初始化一堆命令行参数
         System.setProperty(RemotingCommand.REMOTING_VERSION_KEY, Integer.toString(MQVersion.CURRENT_VERSION));
         //PackageConflictDetect.detectFastjson();
 
@@ -81,15 +82,21 @@ public class NamesrvStartup {
             return null;
         }
 
+        // 2. NamesrvConfig是NameServer自己的配置参数
         final NamesrvConfig namesrvConfig = new NamesrvConfig();
+        // NettyServerConfig是用于接收网络请求的Netty服务器的配置参数
         final NettyServerConfig nettyServerConfig = new NettyServerConfig();
+        // Netty强制监听9876端口, 要修改只能通过-c指定配置文件修改
         nettyServerConfig.setListenPort(9876);
         if (commandLine.hasOption('c')) {
+            // -c 指定 NameServer 的配置文件
             String file = commandLine.getOptionValue('c');
             if (file != null) {
+                // 读取配置文件
                 InputStream in = new BufferedInputStream(new FileInputStream(file));
                 properties = new Properties();
                 properties.load(in);
+                // 覆盖NamesrvConfig和NettyServerConfig的默认配置
                 MixAll.properties2Object(properties, namesrvConfig);
                 MixAll.properties2Object(properties, nettyServerConfig);
 
@@ -101,12 +108,14 @@ public class NamesrvStartup {
         }
 
         if (commandLine.hasOption('p')) {
+            // -p 打印NameServer 的配置参数信息
             InternalLogger console = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_CONSOLE_NAME);
             MixAll.printObjectProperties(console, namesrvConfig);
             MixAll.printObjectProperties(console, nettyServerConfig);
             System.exit(0);
         }
 
+        // 再从命令行参数获取配置, 覆盖NamesrvConfig的配置
         MixAll.properties2Object(ServerUtil.commandLine2Properties(commandLine), namesrvConfig);
 
         if (null == namesrvConfig.getRocketmqHome()) {
@@ -125,6 +134,7 @@ public class NamesrvStartup {
         MixAll.printObjectProperties(log, namesrvConfig);
         MixAll.printObjectProperties(log, nettyServerConfig);
 
+        // 3. 根据配置初始化NamesrvController
         final NamesrvController controller = new NamesrvController(namesrvConfig, nettyServerConfig);
 
         // remember all configs to prevent discard
