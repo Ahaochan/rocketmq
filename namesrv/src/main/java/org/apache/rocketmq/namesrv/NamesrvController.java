@@ -85,6 +85,7 @@ public class NamesrvController {
         this.remotingExecutor =
             Executors.newFixedThreadPool(nettyServerConfig.getServerWorkerThreads(), new ThreadFactoryImpl("RemotingExecutorThread_"));
 
+        // 这里注册网络请求处理器
         this.registerProcessor();
 
         // 4. 后台线程扫描没有发送心跳的Broker
@@ -154,6 +155,7 @@ public class NamesrvController {
                 this.remotingExecutor);
         } else {
 
+            // NameServer将所有网络请求都交给DefaultRequestProcessor来处理
             this.remotingServer.registerDefaultProcessor(new DefaultRequestProcessor(this), this.remotingExecutor);
         }
     }
