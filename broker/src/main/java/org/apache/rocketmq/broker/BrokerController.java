@@ -892,10 +892,12 @@ public class BrokerController {
     }
 
     public void start() throws Exception {
+        // 1. 启动消息存储组件
         if (this.messageStore != null) {
             this.messageStore.start();
         }
 
+        // 2. 启动Netty服务器, 接收消费者和生产者的网络请求
         if (this.remotingServer != null) {
             this.remotingServer.start();
         }
@@ -904,14 +906,17 @@ public class BrokerController {
             this.fastRemotingServer.start();
         }
 
+        // 3. 启动文件相关的一个服务组件
         if (this.fileWatchService != null) {
             this.fileWatchService.start();
         }
 
+        // 4. 启动Broker对外调用的一个组件, 比如发送注册和心跳到NameServer上
         if (this.brokerOuterAPI != null) {
             this.brokerOuterAPI.start();
         }
 
+        // 5. 启动功能组件
         if (this.pullRequestHoldService != null) {
             this.pullRequestHoldService.start();
         }
@@ -924,6 +929,7 @@ public class BrokerController {
             this.filterServerManager.start();
         }
 
+        // 6. 把Broker注册到NameServer上
         if (!messageStoreConfig.isEnableDLegerCommitLog()) {
             startProcessorByHa(messageStoreConfig.getBrokerRole());
             handleSlaveSynchronize(messageStoreConfig.getBrokerRole());
@@ -942,6 +948,7 @@ public class BrokerController {
             }
         }, 1000 * 10, Math.max(10000, Math.min(brokerConfig.getRegisterNameServerPeriod(), 60000)), TimeUnit.MILLISECONDS);
 
+        // 7. 启动功能组件
         if (this.brokerStatsManager != null) {
             this.brokerStatsManager.start();
         }
