@@ -1334,6 +1334,7 @@ public class DefaultMessageStore implements MessageStore {
 
     private void addScheduleTask() {
 
+        // 1. 开启定时任务去删除旧文件
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -1383,7 +1384,10 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     private void cleanFilesPeriodically() {
+        // 1. 删除CommitLog文件
+        // 到了凌晨4点，或者磁盘使用率超过85%，就会触发删除逻辑。如果磁盘使用率超过90%，就不允许继续写入了，立刻删除文件。
         this.cleanCommitLogService.run();
+        // 2. 删除ConsumeQueue文件
         this.cleanConsumeQueueService.run();
     }
 
