@@ -54,7 +54,9 @@ public class NamesrvStartup {
     public static NamesrvController main0(String[] args) {
 
         try {
+            // 1. 构造一个NameServer的Controller, NamesrvController就是用来接收网络请求的
             NamesrvController controller = createNamesrvController(args);
+            // 2. 启动它, 就没了
             start(controller);
             String tip = "The Name Server boot success. serializeType=" + RemotingCommand.getSerializeTypeConfigInThisServer();
             log.info(tip);
