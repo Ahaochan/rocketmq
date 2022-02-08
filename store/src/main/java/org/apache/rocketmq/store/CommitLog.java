@@ -653,6 +653,7 @@ public class CommitLog {
         long elapsedTimeInLock = 0;
         MappedFile unlockMappedFile = null;
 
+        // 1. 加锁
         putMessageLock.lock(); //spin or ReentrantLock ,depending on store config
         try {
             MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile();
@@ -671,6 +672,7 @@ public class CommitLog {
                 return CompletableFuture.completedFuture(new PutMessageResult(PutMessageStatus.CREATE_MAPEDFILE_FAILED, null));
             }
 
+            // 2. 顺序写入MappedFile
             result = mappedFile.appendMessage(msg, this.appendMessageCallback, putMessageContext);
             switch (result.getStatus()) {
                 case PUT_OK:
@@ -698,6 +700,7 @@ public class CommitLog {
             elapsedTimeInLock = this.defaultMessageStore.getSystemClock().now() - beginLockTimestamp;
         } finally {
             beginTimeInLock = 0;
+            // 3. 解锁
             putMessageLock.unlock();
         }
 
@@ -715,6 +718,7 @@ public class CommitLog {
         storeStatsService.getSinglePutMessageTopicTimesTotal(msg.getTopic()).add(1);
         storeStatsService.getSinglePutMessageTopicSizeTotal(topic).add(result.getWroteBytes());
 
+        // 4. 刷盘
         CompletableFuture<PutMessageStatus> flushResultFuture = submitFlushRequest(result, msg);
         CompletableFuture<PutMessageStatus> replicaResultFuture = submitReplicaRequest(result, msg);
         return flushResultFuture.thenCombine(replicaResultFuture, (flushStatus, replicaStatus) -> {
@@ -849,11 +853,14 @@ public class CommitLog {
     public CompletableFuture<PutMessageStatus> submitFlushRequest(AppendMessageResult result, MessageExt messageExt) {
         // Synchronization flush
         if (FlushDiskType.SYNC_FLUSH == this.defaultMessageStore.getMessageStoreConfig().getFlushDiskType()) {
+            // 同步刷盘
             final GroupCommitService service = (GroupCommitService) this.flushCommitLogService;
             if (messageExt.isWaitStoreMsgOK()) {
+                // 1. 构造参数, 放进GroupCommitService排队去异步处理
                 GroupCommitRequest request = new GroupCommitRequest(result.getWroteOffset() + result.getWroteBytes(),
                         this.defaultMessageStore.getMessageStoreConfig().getSyncFlushTimeout());
                 service.putRequest(request);
+                // 2. 马上同步阻塞等待刷盘成功
                 return request.future();
             } else {
                 service.wakeup();
@@ -862,7 +869,9 @@ public class CommitLog {
         }
         // Asynchronous flush
         else {
+            // 异步刷盘
             if (!this.defaultMessageStore.getMessageStoreConfig().isTransientStorePoolEnable()) {
+                // FlushCommitLogService其实是一个线程，他是个抽象父类，他的子类是CommitRealTimeService，所以真正唤醒的是他的子类代表的线程。
                 flushCommitLogService.wakeup();
             } else  {
                 commitLogService.wakeup();
@@ -1174,7 +1183,9 @@ public class CommitLog {
      * GroupCommit Service
      */
     class GroupCommitService extends FlushCommitLogService {
+        // 写队列
         private volatile LinkedList<GroupCommitRequest> requestsWrite = new LinkedList<GroupCommitRequest>();
+        // 读队列
         private volatile LinkedList<GroupCommitRequest> requestsRead = new LinkedList<GroupCommitRequest>();
         private final PutMessageSpinLock lock = new PutMessageSpinLock();
 
@@ -1206,6 +1217,7 @@ public class CommitLog {
                     // two times the flush
                     boolean flushOK = CommitLog.this.mappedFileQueue.getFlushedWhere() >= req.getNextOffset();
                     for (int i = 0; i < 2 && !flushOK; i++) {
+                        // 强制将内存数据刷入磁盘文件中
                         CommitLog.this.mappedFileQueue.flush(0);
                         flushOK = CommitLog.this.mappedFileQueue.getFlushedWhere() >= req.getNextOffset();
                     }
