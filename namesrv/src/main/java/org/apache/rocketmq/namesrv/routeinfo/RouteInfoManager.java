@@ -112,8 +112,10 @@ public class RouteInfoManager {
         RegisterBrokerResult result = new RegisterBrokerResult();
         try {
             try {
+                // 1. 加写锁
                 this.lock.writeLock().lockInterruptibly();
 
+                // 2. 把BrokerName塞进Set集合, 用来判断某个Broker是否存在
                 Set<String> brokerNames = this.clusterAddrTable.get(clusterName);
                 if (null == brokerNames) {
                     brokerNames = new HashSet<String>();
@@ -121,6 +123,7 @@ public class RouteInfoManager {
                 }
                 brokerNames.add(brokerName);
 
+                // 3. 将Broker信息注册到brokerAddrTable这个Map里
                 boolean registerFirst = false;
 
                 BrokerData brokerData = this.brokerAddrTable.get(brokerName);
@@ -157,6 +160,7 @@ public class RouteInfoManager {
                     }
                 }
 
+                // 4. 当每30秒一次注册时, 都要创建一个BrokerLiveInfo, 取最新的时间戳塞进去
                 BrokerLiveInfo prevBrokerLiveInfo = this.brokerLiveTable.put(brokerAddr,
                     new BrokerLiveInfo(
                         System.currentTimeMillis(),
@@ -186,6 +190,7 @@ public class RouteInfoManager {
                     }
                 }
             } finally {
+                // 5. 解锁
                 this.lock.writeLock().unlock();
             }
         } catch (Exception e) {
@@ -444,6 +449,7 @@ public class RouteInfoManager {
         while (it.hasNext()) {
             Entry<String, BrokerLiveInfo> next = it.next();
             long last = next.getValue().getLastUpdateTimestamp();
+            // 超时了就关闭Channel然后从Map中移除, BROKER_CHANNEL_EXPIRED_TIME默认120秒
             if ((last + BROKER_CHANNEL_EXPIRED_TIME) < System.currentTimeMillis()) {
                 RemotingUtil.closeChannel(next.getValue().getChannel());
                 it.remove();
