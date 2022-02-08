@@ -54,6 +54,8 @@ public class BrokerStartup {
     public static InternalLogger log;
 
     public static void main(String[] args) {
+        // 1. 构造一个NameServer的Controller, NamesrvController就是用来接收网络请求的
+        // 2. 启动它, 就没了
         start(createBrokerController(args));
     }
 
@@ -91,6 +93,7 @@ public class BrokerStartup {
 
         try {
             //PackageConflictDetect.detectFastjson();
+            // 1. 初始化一堆命令行参数
             Options options = ServerUtil.buildCommandlineOptions(new Options());
             commandLine = ServerUtil.parseCmdLine("mqbroker", args, buildCommandlineOptions(options),
                 new PosixParser());
@@ -98,13 +101,17 @@ public class BrokerStartup {
                 System.exit(-1);
             }
 
+            // 2. BrokerConfig是Broker自己的配置参数, NettyServerConfig是Netty服务器配置, NettyClientConfig是Netty客户端配置
             final BrokerConfig brokerConfig = new BrokerConfig();
             final NettyServerConfig nettyServerConfig = new NettyServerConfig();
             final NettyClientConfig nettyClientConfig = new NettyClientConfig();
 
+            // 是否使用TLS加密通信
             nettyClientConfig.setUseTLS(Boolean.parseBoolean(System.getProperty(TLS_ENABLE,
                 String.valueOf(TlsSystemConfig.tlsMode == TlsMode.ENFORCING))));
+            // 设置Netty服务器监听端口为10911
             nettyServerConfig.setListenPort(10911);
+            // 3. MessageStoreConfig是Broker存储消息的配置
             final MessageStoreConfig messageStoreConfig = new MessageStoreConfig();
 
             if (BrokerRole.SLAVE == messageStoreConfig.getBrokerRole()) {
@@ -113,6 +120,7 @@ public class BrokerStartup {
             }
 
             if (commandLine.hasOption('c')) {
+                // -c 指定 Broker 的配置文件
                 String file = commandLine.getOptionValue('c');
                 if (file != null) {
                     configFile = file;
@@ -121,6 +129,7 @@ public class BrokerStartup {
                     properties.load(in);
 
                     properties2SystemEnv(properties);
+                    // 覆盖默认配置BrokerConfig、NettyServerConfig、NettyClientConfig、MessageStoreConfig
                     MixAll.properties2Object(properties, brokerConfig);
                     MixAll.properties2Object(properties, nettyServerConfig);
                     MixAll.properties2Object(properties, nettyClientConfig);
@@ -131,6 +140,7 @@ public class BrokerStartup {
                 }
             }
 
+            // 从命令行参数获取配置, 覆盖BrokerConfig配置
             MixAll.properties2Object(ServerUtil.commandLine2Properties(commandLine), brokerConfig);
 
             if (null == brokerConfig.getRocketmqHome()) {
@@ -188,6 +198,7 @@ public class BrokerStartup {
             configurator.doConfigure(brokerConfig.getRocketmqHome() + "/conf/logback_broker.xml");
 
             if (commandLine.hasOption('p')) {
+                // -p 打印配置参数信息
                 InternalLogger console = InternalLoggerFactory.getLogger(LoggerName.BROKER_CONSOLE_NAME);
                 MixAll.printObjectProperties(console, brokerConfig);
                 MixAll.printObjectProperties(console, nettyServerConfig);
@@ -195,6 +206,7 @@ public class BrokerStartup {
                 MixAll.printObjectProperties(console, messageStoreConfig);
                 System.exit(0);
             } else if (commandLine.hasOption('m')) {
+                // -m 打印配置参数信息
                 InternalLogger console = InternalLoggerFactory.getLogger(LoggerName.BROKER_CONSOLE_NAME);
                 MixAll.printObjectProperties(console, brokerConfig, true);
                 MixAll.printObjectProperties(console, nettyServerConfig, true);
@@ -209,6 +221,7 @@ public class BrokerStartup {
             MixAll.printObjectProperties(log, nettyClientConfig);
             MixAll.printObjectProperties(log, messageStoreConfig);
 
+            // 4. 根据配置初始化BrokerController, 初始化一堆核心功能组件和后台线程池
             final BrokerController controller = new BrokerController(
                 brokerConfig,
                 nettyServerConfig,
@@ -217,6 +230,7 @@ public class BrokerStartup {
             // remember all configs to prevent discard
             controller.getConfiguration().registerConfig(properties);
 
+            // 5. 从磁盘加载配置初始化刚才new出来的核心功能组件
             boolean initResult = controller.initialize();
             if (!initResult) {
                 controller.shutdown();
