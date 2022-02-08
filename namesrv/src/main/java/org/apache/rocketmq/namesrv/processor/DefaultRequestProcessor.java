@@ -81,6 +81,7 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
         }
 
 
+        // 根据请求的Code，分发到不同的处理器
         switch (request.getCode()) {
             case RequestCode.PUT_KV_CONFIG:
                 return this.putKVConfig(ctx, request);
@@ -297,6 +298,7 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
             return response;
         }
 
+        // 1. 反序列化Topic配置
         TopicConfigSerializeWrapper topicConfigWrapper;
         if (request.getBody() != null) {
             topicConfigWrapper = TopicConfigSerializeWrapper.decode(request.getBody(), TopicConfigSerializeWrapper.class);
@@ -306,6 +308,7 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
             topicConfigWrapper.getDataVersion().setTimestamp(0);
         }
 
+        // 2. 调用RouteInfoManager这个管理路由信息的核心组件, 注册到Map中
         RegisterBrokerResult result = this.namesrvController.getRouteInfoManager().registerBroker(
             requestHeader.getClusterName(),
             requestHeader.getBrokerAddr(),
@@ -317,6 +320,7 @@ public class DefaultRequestProcessor extends AsyncNettyRequestProcessor implemen
             ctx.channel()
         );
 
+        // 3. 构造响应体
         responseHeader.setHaServerAddr(result.getHaServerAddr());
         responseHeader.setMasterAddr(result.getMasterAddr());
 
