@@ -17,19 +17,29 @@
 package org.apache.rocketmq.remoting.netty;
 
 public class NettyServerConfig implements Cloneable {
+    // Netty监听端口, 在外面已经被强制指定为9876, 可以用-c修改端口
     private int listenPort = 8888;
+    // NettyServer的工作线程
     private int serverWorkerThreads = 8;
+    // Netty的public线程池线程数
     private int serverCallbackExecutorThreads = 0;
+    // Netty的IO线程池线程数, 负责解析网络请求, 将请求转发给work线程来处理
     private int serverSelectorThreads = 3;
+    // Broker端用到的参数
     private int serverOnewaySemaphoreValue = 256;
+    // Broker端用到的参数
     private int serverAsyncSemaphoreValue = 64;
+    // 如果一个网络连接空闲超过120s就会被关闭
     private int serverChannelMaxIdleTimeSeconds = 120;
 
+    // socket send buffer缓冲区大小
     private int serverSocketSndBufSize = NettySystemConfig.socketSndbufSize;
+    // socket receive buffer缓冲区大小
     private int serverSocketRcvBufSize = NettySystemConfig.socketRcvbufSize;
     private int writeBufferHighWaterMark = NettySystemConfig.writeBufferHighWaterMark;
     private int writeBufferLowWaterMark = NettySystemConfig.writeBufferLowWaterMark;
     private int serverSocketBacklog = NettySystemConfig.socketBacklog;
+    // 是否开启ByteBuffer缓存
     private boolean serverPooledByteBufAllocatorEnable = true;
 
     /**
@@ -39,6 +49,7 @@ public class NettyServerConfig implements Cloneable {
      * ../glibc-2.10.1/configure \ --prefix=/usr \ --with-headers=/usr/include \
      * --host=x86_64-linux-gnu \ --build=x86_64-pc-linux-gnu \ --without-gd
      */
+    // 是否开启epoll IO模型
     private boolean useEpollNativeSelector = false;
 
     public int getListenPort() {
