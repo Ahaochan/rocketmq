@@ -149,6 +149,9 @@ public class BrokerController {
     private final BrokerStatsManager brokerStatsManager;
     private final List<SendMessageHook> sendMessageHookList = new ArrayList<SendMessageHook>();
     private final List<ConsumeMessageHook> consumeMessageHookList = new ArrayList<ConsumeMessageHook>();
+    private final BrokerFastFailure brokerFastFailure;
+    private final Configuration configuration;
+    private final Map<Class, AccessValidator> accessValidatorMap = new HashMap<Class, AccessValidator>();
     private MessageStore messageStore;
     private RemotingServer remotingServer;
     private RemotingServer fastRemotingServer;
@@ -166,14 +169,11 @@ public class BrokerController {
     private boolean updateMasterHAServerAddrPeriodically = false;
     private BrokerStats brokerStats;
     private InetSocketAddress storeHost;
-    private BrokerFastFailure brokerFastFailure;
-    private Configuration configuration;
     private FileWatchService fileWatchService;
     private TransactionalMessageCheckService transactionalMessageCheckService;
     private TransactionalMessageService transactionalMessageService;
     private AbstractTransactionalMessageCheckListener transactionalMessageCheckListener;
     private Future<?> slaveSyncFuture;
-    private Map<Class,AccessValidator> accessValidatorMap = new HashMap<Class, AccessValidator>();
 
     public BrokerController(
         final BrokerConfig brokerConfig,
@@ -202,15 +202,15 @@ public class BrokerController {
 
         this.slaveSynchronize = new SlaveSynchronize(this);
 
-        this.sendThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getSendThreadPoolQueueCapacity());
-        this.putThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getPutThreadPoolQueueCapacity());
-        this.pullThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getPullThreadPoolQueueCapacity());
-        this.replyThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getReplyThreadPoolQueueCapacity());
-        this.queryThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getQueryThreadPoolQueueCapacity());
-        this.clientManagerThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getClientManagerThreadPoolQueueCapacity());
-        this.consumerManagerThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getConsumerManagerThreadPoolQueueCapacity());
-        this.heartbeatThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getHeartbeatThreadPoolQueueCapacity());
-        this.endTransactionThreadPoolQueue = new LinkedBlockingQueue<Runnable>(this.brokerConfig.getEndTransactionPoolQueueCapacity());
+        this.sendThreadPoolQueue = new LinkedBlockingQueue<>(this.brokerConfig.getSendThreadPoolQueueCapacity());
+        this.putThreadPoolQueue = new LinkedBlockingQueue<>(this.brokerConfig.getPutThreadPoolQueueCapacity());
+        this.pullThreadPoolQueue = new LinkedBlockingQueue<>(this.brokerConfig.getPullThreadPoolQueueCapacity());
+        this.replyThreadPoolQueue = new LinkedBlockingQueue<>(this.brokerConfig.getReplyThreadPoolQueueCapacity());
+        this.queryThreadPoolQueue = new LinkedBlockingQueue<>(this.brokerConfig.getQueryThreadPoolQueueCapacity());
+        this.clientManagerThreadPoolQueue = new LinkedBlockingQueue<>(this.brokerConfig.getClientManagerThreadPoolQueueCapacity());
+        this.consumerManagerThreadPoolQueue = new LinkedBlockingQueue<>(this.brokerConfig.getConsumerManagerThreadPoolQueueCapacity());
+        this.heartbeatThreadPoolQueue = new LinkedBlockingQueue<>(this.brokerConfig.getHeartbeatThreadPoolQueueCapacity());
+        this.endTransactionThreadPoolQueue = new LinkedBlockingQueue<>(this.brokerConfig.getEndTransactionPoolQueueCapacity());
 
         this.brokerStatsManager = messageStoreConfig.isEnableLmq() ? new LmqBrokerStatsManager(this.brokerConfig.getBrokerClusterName(), this.brokerConfig.isEnableDetailStat()) : new BrokerStatsManager(this.brokerConfig.getBrokerClusterName(), this.brokerConfig.isEnableDetailStat());
 
@@ -365,75 +365,56 @@ public class BrokerController {
             final long initialDelay = UtilAll.computeNextMorningTimeMillis() - System.currentTimeMillis();
             final long period = 1000 * 60 * 60 * 24;
             // 15. 定时统计Broker
-            this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        BrokerController.this.getBrokerStats().record();
-                    } catch (Throwable e) {
-                        log.error("schedule record error.", e);
-                    }
+            this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+                try {
+                    BrokerController.this.getBrokerStats().record();
+                } catch (Throwable e) {
+                    log.error("schedule record error.", e);
                 }
             }, initialDelay, period, TimeUnit.MILLISECONDS);
 
             // 16. 定时进行Consumer消费offset持久化到磁盘
-            this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        BrokerController.this.consumerOffsetManager.persist();
-                    } catch (Throwable e) {
-                        log.error("schedule persist consumerOffset error.", e);
-                    }
+            this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+                try {
+                    BrokerController.this.consumerOffsetManager.persist();
+                } catch (Throwable e) {
+                    log.error("schedule persist consumerOffset error.", e);
                 }
             }, 1000 * 10, this.brokerConfig.getFlushConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
 
             // 17. 定时进行Consumer filter过滤器的持久化
-            this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        BrokerController.this.consumerFilterManager.persist();
-                    } catch (Throwable e) {
-                        log.error("schedule persist consumer filter error.", e);
-                    }
+            this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+                try {
+                    BrokerController.this.consumerFilterManager.persist();
+                } catch (Throwable e) {
+                    log.error("schedule persist consumer filter error.", e);
                 }
             }, 1000 * 10, 1000 * 10, TimeUnit.MILLISECONDS);
 
             // 18. 定时进行Broker保护
-            this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        BrokerController.this.protectBroker();
-                    } catch (Throwable e) {
-                        log.error("protectBroker error.", e);
-                    }
+            this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+                try {
+                    BrokerController.this.protectBroker();
+                } catch (Throwable e) {
+                    log.error("protectBroker error.", e);
                 }
             }, 3, 3, TimeUnit.MINUTES);
 
             // 19. 定时打印水位
-            this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        BrokerController.this.printWaterMark();
-                    } catch (Throwable e) {
-                        log.error("printWaterMark error.", e);
-                    }
+            this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+                try {
+                    BrokerController.this.printWaterMark();
+                } catch (Throwable e) {
+                    log.error("printWaterMark error.", e);
                 }
             }, 10, 1, TimeUnit.SECONDS);
 
             // 20. 定时进行落后CommitLog分发的任务
-            this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-
-                @Override
-                public void run() {
-                    try {
-                        log.info("dispatch behind commit log {} bytes", BrokerController.this.getMessageStore().dispatchBehindBytes());
-                    } catch (Throwable e) {
-                        log.error("schedule dispatchBehindBytes error.", e);
-                    }
+            this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+                try {
+                    log.info("dispatch behind commit log {} bytes", BrokerController.this.getMessageStore().dispatchBehindBytes());
+                } catch (Throwable e) {
+                    log.error("schedule dispatchBehindBytes error.", e);
                 }
             }, 1000 * 10, 1000 * 60, TimeUnit.MILLISECONDS);
 
@@ -442,15 +423,11 @@ public class BrokerController {
                 this.brokerOuterAPI.updateNameServerAddressList(this.brokerConfig.getNamesrvAddr());
                 log.info("Set user specified name server address: {}", this.brokerConfig.getNamesrvAddr());
             } else if (this.brokerConfig.isFetchNamesrvAddrByAddressServer()) {
-                this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-
-                    @Override
-                    public void run() {
-                        try {
-                            BrokerController.this.brokerOuterAPI.fetchNameServerAddr();
-                        } catch (Throwable e) {
-                            log.error("ScheduledTask fetchNameServerAddr exception", e);
-                        }
+                this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+                    try {
+                        BrokerController.this.brokerOuterAPI.fetchNameServerAddr();
+                    } catch (Throwable e) {
+                        log.error("ScheduledTask fetchNameServerAddr exception", e);
                     }
                 }, 1000 * 10, 1000 * 60 * 2, TimeUnit.MILLISECONDS);
             }
@@ -464,14 +441,11 @@ public class BrokerController {
                         this.updateMasterHAServerAddrPeriodically = true;
                     }
                 } else {
-                    this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-                        @Override
-                        public void run() {
-                            try {
-                                BrokerController.this.printMasterAndSlaveDiff();
-                            } catch (Throwable e) {
-                                log.error("schedule printMasterAndSlaveDiff error.", e);
-                            }
+                    this.scheduledExecutorService.scheduleAtFixedRate(() -> {
+                        try {
+                            BrokerController.this.printMasterAndSlaveDiff();
+                        } catch (Throwable e) {
+                            log.error("schedule printMasterAndSlaveDiff error.", e);
                         }
                     }, 1000 * 10, 1000 * 60, TimeUnit.MILLISECONDS);
                 }
@@ -984,7 +958,7 @@ public class BrokerController {
 
         if (!PermName.isWriteable(this.getBrokerConfig().getBrokerPermission())
             || !PermName.isReadable(this.getBrokerConfig().getBrokerPermission())) {
-            ConcurrentHashMap<String, TopicConfig> topicConfigTable = new ConcurrentHashMap<String, TopicConfig>();
+            ConcurrentHashMap<String, TopicConfig> topicConfigTable = new ConcurrentHashMap<>();
             for (TopicConfig topicConfig : topicConfigWrapper.getTopicConfigTable().values()) {
                 TopicConfig tmp =
                     new TopicConfig(topicConfig.getTopicName(), topicConfig.getReadQueueNums(), topicConfig.getWriteQueueNums(),
